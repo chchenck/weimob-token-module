@@ -24,7 +24,16 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build
-        run: gradle assembleDebug --no-daemon
+        run: |
+          gradle assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Report errors to annotations
+        if: failure()
+        run: |
+          grep -E "error:|error |FAILURE:|Caused by:" build.log | head -40 | while IFS= read -r line; do
+            echo "::error::${line:0:500}"
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
