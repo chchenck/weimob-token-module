@@ -175,8 +175,8 @@ public class MainHook implements IXposedHookLoadPackage {
                 }
                 int code = conn.getResponseCode();
                 XposedBridge.log(TAG + ": push result http " + code);
-            } catch (Throwable t) {
-                XposedBridge.log(TAG + ": push failed: " + t);
+            } catch (Throwable ex) {
+                XposedBridge.log(TAG + ": push failed: " + ex);
             } finally {
                 if (conn != null) {
                     conn.disconnect();
