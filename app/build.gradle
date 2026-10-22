@@ -1,0 +1,30 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.mao.weimobtoken'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.mao.weimobtoken"
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+// Xposed API 以 stub 源码形式提供（src/main/java/de/robv/...），
+// 运行时由 LSPosed 注入真实实现，无需外部依赖，云端编译零障碍。

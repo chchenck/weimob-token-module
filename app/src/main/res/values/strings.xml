@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">微盟Token抓取</string>
+    <string name="xposed_desc">Hook 微信小程序请求，自动抓取微盟 X-WX-Token 并推送到服务器更新 config.json</string>
+    <string name="url_hint">接收器地址，例如 http://192.168.1.10:9876/token?wid=3150705087</string>
+    <string name="save">保存配置</string>
+    <string name="test">发送测试</string>
+    <string name="usage">
+1. 在上方填入常开设备上 token_server.py 的地址（含 /token 路径，可带 ?wid= 指定账号）并保存\n
+2. LSPosed 管理器中启用本模块，作用域勾选微信，重启手机（或重启微信进程）\n
+3. 打开一次小程序「签到有礼」页面，接收器日志出现 [TOKEN] 即成功\n
+4. 点「发送测试」可验证服务器连通性
+    </string>
+</resources>
