@@ -5,7 +5,8 @@
 
     <application
         android:label="@string/app_name"
-        android:theme="@android:style/Theme.Material.Light.DarkActionBar">
+        android:theme="@android:style/Theme.Material.Light.DarkActionBar"
+        android:usesCleartextTraffic="true">
 
         <!-- Xposed 模块声明 -->
         <meta-data
