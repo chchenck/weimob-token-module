@@ -48,13 +48,15 @@ public class MainHook implements IXposedHookLoadPackage {
 
     private static volatile String lastToken = null;
     private static volatile boolean hooked = false;
+    private static final java.util.Set<String> seenClasses =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!WECHAT_PKG.equals(lpparam.packageName)) {
             return;
         }
-        XposedBridge.log(TAG + ": loaded into wechat");
+        XposedBridge.log(TAG + ": loaded into wechat, process=" + lpparam.processName);
 
         // 微信小程序运行在独立 classLoader，先 hook Application.attach 拿到宿主 classLoader
         XposedHelpers.findAndHookMethod(Application.class, "attach",
@@ -67,11 +69,13 @@ public class MainHook implements IXposedHookLoadPackage {
                         hooked = true;
                         ClassLoader cl = ((Application) param.thisObject).getClassLoader();
                         hookToken(cl);
+                        hookClassLoaderDiscovery(cl);
                     }
                 });
 
         // 兜底：部分微信版本主进程 classLoader 可直接找到目标类
         hookToken(lpparam.classLoader);
+        hookClassLoaderDiscovery(lpparam.classLoader);
     }
 
     private void hookToken(ClassLoader classLoader) {
@@ -82,18 +86,79 @@ public class MainHook implements IXposedHookLoadPackage {
                     XposedBridge.log(TAG + ": class not found, skip: " + className);
                     continue;
                 }
-                XposedHelpers.hookAllMethods(clazz, "nativeInvokeHandler", new XC_MethodHook() {
+                hookAllNativeMethods(clazz, className);
+            } catch (Throwable t) {
+                XposedBridge.log(TAG + ": hook failed for " + className + ": " + t);
+            }
+        }
+    }
+
+    /**
+     * 自适应发现：微信混淆类名随版本变化，固定类名会失效。
+     * 监控 loadClass，凡小程序相关包下含 Jni/Binding/JsBridge 的类加载即 hook
+     * 其全部 native 方法，不依赖具体方法名与类名。
+     */
+    private void hookClassLoaderDiscovery(ClassLoader classLoader) {
+        try {
+            XposedHelpers.findAndHookMethod(ClassLoader.class, "loadClass",
+                    String.class, new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            Object result = param.getResult();
+                            if (!(result instanceof Class)) {
+                                return;
+                            }
+                            String name = ((Class<?>) result).getName();
+                            if (!name.startsWith("com.tencent.mm")
+                                    || seenClasses.contains(name)) {
+                                return;
+                            }
+                            seenClasses.add(name);
+                            boolean interesting = name.contains("appbrand")
+                                    && (name.contains("Jni") || name.contains("Binding")
+                                        || name.contains("JsBridge"));
+                            if (!interesting) {
+                                return;
+                            }
+                            XposedBridge.log(TAG + ": discovered candidate class: " + name);
+                            try {
+                                hookAllNativeMethods((Class<?>) result, name);
+                            } catch (Throwable t) {
+                                XposedBridge.log(TAG + ": hook discovered failed: " + name
+                                        + " " + t);
+                            }
+                        }
+                    });
+            XposedBridge.log(TAG + ": classloader discovery armed");
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": classloader discovery setup failed: " + t);
+        }
+    }
+
+    /** hook 类中全部 native 方法（名字不限），参数交 scanArgs 扫描 */
+    private void hookAllNativeMethods(Class<?> clazz, String label) {
+        java.lang.reflect.Method[] methods = clazz.getDeclaredMethods();
+        int hookedCount = 0;
+        for (java.lang.reflect.Method m : methods) {
+            int mod = m.getModifiers();
+            if (!java.lang.reflect.Modifier.isNative(mod)) {
+                continue;
+            }
+            try {
+                XposedBridge.hookMethod(m, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
                         scanArgs(param.args);
                     }
                 });
-                XposedBridge.log(TAG + ": hooked all overloads of " + className
-                        + ".nativeInvokeHandler (" + clazz.getDeclaredMethods().length + " methods)");
+                hookedCount++;
             } catch (Throwable t) {
-                XposedBridge.log(TAG + ": hook failed for " + className + ": " + t);
+                XposedBridge.log(TAG + ": hook native failed " + label + "#"
+                        + m.getName() + ": " + t);
             }
         }
+        XposedBridge.log(TAG + ": hooked " + hookedCount + "/" + methods.length
+                + " native methods of " + label);
     }
 
     /** 扫描方法参数，找包含 X-WX-Token 的 JSON 字符串并提取 token/wid/cuid */
