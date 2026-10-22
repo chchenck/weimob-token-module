@@ -5,6 +5,7 @@
     <string name="url_hint">接收器地址，例如 http://192.168.1.10:9876/token?wid=3150705087</string>
     <string name="save">保存配置</string>
     <string name="test">发送测试</string>
+    <string name="discover">自动发现接收器（推荐，无需手填 IP）</string>
     <string name="usage">
 1. 在上方填入常开设备上 token_server.py 的地址（含 /token 路径，可带 ?wid= 指定账号）并保存\n
 2. LSPosed 管理器中启用本模块，作用域勾选微信，重启手机（或重启微信进程）\n

@@ -47,6 +47,13 @@
                 android:text="@string/test" />
         </LinearLayout>
 
+        <Button
+            android:id="@+id/discover_btn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/discover" />
+
         <TextView
             android:id="@+id/usage_text"
             android:layout_width="match_parent"
