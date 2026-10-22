@@ -168,16 +168,72 @@ public class MainHook implements IXposedHookLoadPackage {
         }
         lastToken = token;
 
+        String serverUrl = "";
         XSharedPreferences prefs = new XSharedPreferences(MODULE_PKG, PREF_FILE);
         prefs.reload();
-        String serverUrl = prefs.getString(PREF_KEY_URL, "");
+        serverUrl = prefs.getString(PREF_KEY_URL, "");
         if (serverUrl.isEmpty()) {
-            XposedBridge.log(TAG + ": server url not configured, token: " + mask(token));
+            // 兜底：XSharedPreferences 读不到配置时（LSPosed 版本差异），
+            // UDP 广播自动发现接收器，与 App 内"自动发现"按钮同机制
+            XposedBridge.log(TAG + ": pref url empty, trying UDP discovery");
+            serverUrl = discoverServerUrl();
+        }
+        if (serverUrl.isEmpty()) {
+            XposedBridge.log(TAG + ": no server url (pref + discovery failed), token: "
+                    + mask(token));
             return;
         }
         XposedBridge.log(TAG + ": captured new token " + mask(token)
                 + " wid=" + wid + " -> " + serverUrl);
         pushToken(serverUrl, token, wid, cuid);
+    }
+
+    private static volatile String cachedServerUrl = null;
+
+    /** 广播 WEIMOB_DISCOVER 发现接收器，返回 http://ip:port/token；失败返回空串 */
+    private String discoverServerUrl() {
+        if (cachedServerUrl != null) {
+            return cachedServerUrl;
+        }
+        java.net.DatagramSocket socket = null;
+        try {
+            socket = new java.net.DatagramSocket();
+            socket.setBroadcast(true);
+            socket.setSoTimeout(3000);
+            byte[] magic = "WEIMOB_DISCOVER".getBytes(StandardCharsets.UTF_8);
+            socket.send(new java.net.DatagramPacket(magic, magic.length,
+                    java.net.InetAddress.getByName("255.255.255.255"), 9876));
+
+            byte[] buf = new byte[512];
+            long deadline = System.currentTimeMillis() + 4000;
+            while (System.currentTimeMillis() < deadline) {
+                try {
+                    java.net.DatagramPacket packet = new java.net.DatagramPacket(buf, buf.length);
+                    socket.receive(packet);
+                    JSONObject json = new JSONObject(
+                            new String(packet.getData(), 0, packet.getLength(),
+                                    StandardCharsets.UTF_8));
+                    if ("weimob-token-receiver".equals(json.optString("service"))) {
+                        int port = json.optInt("port", 9876);
+                        cachedServerUrl = "http://" + packet.getAddress().getHostAddress()
+                                + ":" + port + "/token";
+                        XposedBridge.log(TAG + ": discovered server " + cachedServerUrl);
+                        return cachedServerUrl;
+                    }
+                } catch (java.net.SocketTimeoutException e) {
+                    break;
+                } catch (Throwable ignore) {
+                    // 非 JSON 应答，继续等
+                }
+            }
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": discovery failed: " + t);
+        } finally {
+            if (socket != null) {
+                socket.close();
+            }
+        }
+        return "";
     }
 
     private void pushToken(String serverUrl, String token, String wid, String cuid) {
