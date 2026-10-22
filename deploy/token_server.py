@@ -133,6 +133,12 @@ class Handler(BaseHTTPRequestHandler):
         if not token:
             self._reply(400, {"ok": False, "error": "缺少 token 字段"})
             return
+        # 真实 X-WX-Token 为长十六进制串；拒绝测试值/明显无效值，防止污染 config
+        if len(token) < 64 or not all(c in "0123456789abcdefABCDEF" for c in token):
+            self._reply(400, {"ok": False,
+                              "error": f"token 格式无效（长度 {len(token)}），已拒绝写入。"
+                                       f"提示：请用 /ping 做连通性测试"})
+            return
 
         qs = parse_qs(parsed.query)
         wid = qs.get("wid", [None])[0]

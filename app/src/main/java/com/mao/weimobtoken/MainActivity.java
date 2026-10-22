@@ -185,20 +185,14 @@ public class MainActivity extends Activity {
     private String sendTest(String urlStr) {
         HttpURLConnection conn = null;
         try {
-            JSONObject body = new JSONObject();
-            body.put("token", "test-from-module");
-            body.put("time", System.currentTimeMillis());
-            body.put("source", "test");
-
-            conn = (HttpURLConnection) new URL(urlStr).openConnection();
-            conn.setRequestMethod("POST");
+            // 只测连通性（GET /ping），绝不 POST 假 token 污染服务端 config
+            java.net.URI uri = new java.net.URI(urlStr);
+            String base = uri.getScheme() + "://" + uri.getHost()
+                    + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+            conn = (HttpURLConnection) new URL(base + "/ping").openConnection();
+            conn.setRequestMethod("GET");
             conn.setConnectTimeout(8000);
             conn.setReadTimeout(8000);
-            conn.setDoOutput(true);
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(body.toString().getBytes(StandardCharsets.UTF_8));
-            }
             int code = conn.getResponseCode();
             String resp = readStream(conn);
             return "HTTP " + code + (resp.isEmpty() ? "" : "\n" + resp);
