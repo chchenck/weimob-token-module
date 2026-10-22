@@ -2,6 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
+repositories {
+    google()
+    mavenCentral()
+}
+
 android {
     namespace 'com.mao.weimobtoken'
     compileSdk 34
@@ -10,8 +15,8 @@ android {
         applicationId "com.mao.weimobtoken"
         minSdk 23
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1"
     }
 
     buildTypes {
@@ -26,5 +31,9 @@ android {
     }
 }
 
-// Xposed API 以 stub 源码形式提供（src/main/java/de/robv/...），
-// 运行时由 LSPosed 注入真实实现，无需外部依赖，云端编译零障碍。
+// Xposed API 必须 compileOnly：只参与编译、不打入 APK。
+// 若 API 类被编译进 APK，LSPosed 会拒绝加载模块（"The Xposed API classes
+// are compiled into the module's APK"），hook 完全不生效。
+dependencies {
+    compileOnly 'de.robv.android.xposed:api:82'
+}
