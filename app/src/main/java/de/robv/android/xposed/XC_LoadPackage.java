@@ -13,7 +13,7 @@ public abstract class XC_LoadPackage extends XC_MethodHook {
     public XC_LoadPackage(int priority) {
     }
 
-    @Override
+    // 注意：不能用 @Override——父类 XC_MethodHook 没有此方法（stub 与 rovo89 原版一致）
     protected abstract void handleLoadPackage(LoadPackageParam lpparam) throws Throwable;
 
     public static class LoadPackageParam {
