@@ -56,8 +56,8 @@ def mask(token):
     return f"{token[:12]}...{token[-6:]}"
 
 
-def update_config(token, wid=None):
-    """按 wid 匹配更新账号 token；无 wid 时更新全部账号。返回 (updated, message)。"""
+def update_config(token, wid=None, cuid=None):
+    """按 wid 匹配更新账号；wid 未命中时认领 token 为空的占位账号。返回 (ok, message)。"""
     with LOCK:
         if not CONFIG_PATH.exists():
             return False, f"config.json 不存在: {CONFIG_PATH}"
@@ -70,29 +70,55 @@ def update_config(token, wid=None):
         if not accounts:
             return False, "config.json 中 accounts 为空"
 
+        # 多账号环境必须能确定 wid，防止把一个号的 token 写进所有账号
+        if wid is None and len(accounts) > 1:
+            known = [str(a.get("wid", "?")) for a in accounts]
+            return False, (f"当前 {len(accounts)} 个账号，推送必须携带 wid 指定账号"
+                           f"（现有 wid: {','.join(known)}）")
+
         targets = [a for a in accounts
                    if wid is None or str(a.get("wid", "")) == str(wid)]
+
         if not targets:
+            # wid 未命中：认领 token 为空的占位账号（新号自动接入）
+            placeholders = [a for a in accounts if not str(a.get("token") or "").strip()]
+            if placeholders and wid:
+                target = placeholders[0]
+                target["token"] = token
+                target["wid"] = str(wid)
+                if cuid:
+                    target["cuid"] = str(cuid)
+                _atomic_write(config)
+                return True, (f"新账号已认领占位: remark={target.get('remark')} "
+                              f"wid={wid} token={mask(token)}")
             known = [str(a.get("wid", "?")) for a in accounts]
-            return False, f"未找到 wid={wid} 的账号（现有: {','.join(known)}）"
+            hint = f"，推送 wid={wid}" if wid else "（推送未携带 wid）"
+            return False, (f"未找到匹配账号{hint}；现有 wid: {','.join(known)}"
+                           + ("；可在 config 添加 token 为空的占位账号后重试" if wid else ""))
 
         changed = 0
         for acc in targets:
             if acc.get("token") != token:
                 acc["token"] = token
                 changed += 1
+            if cuid and acc.get("cuid") != str(cuid):
+                acc["cuid"] = str(cuid)
 
         if changed:
-            tmp = CONFIG_PATH.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2),
-                           encoding="utf-8")
-            tmp.replace(CONFIG_PATH)
+            _atomic_write(config)
 
         return True, (
-            f"已更新 {len(targets)} 个账号（变化 {changed} 个）: "
+            f"已更新 {len(targets)} 个账号（token 变化 {changed} 个）: "
             f"wid={','.join(str(a.get('wid', '?')) for a in targets)} "
             f"token={mask(token)}"
         )
+
+
+def _atomic_write(config):
+    tmp = CONFIG_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2),
+                   encoding="utf-8")
+    tmp.replace(CONFIG_PATH)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -141,9 +167,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         qs = parse_qs(parsed.query)
-        wid = qs.get("wid", [None])[0]
+        # wid 以 URL query 优先，body 兜底（新版模块自动携带）；cuid 同理
+        wid = qs.get("wid", [None])[0] or str(data.get("wid") or "").strip() or None
+        cuid = qs.get("cuid", [None])[0] or str(data.get("cuid") or "").strip() or None
 
-        ok, message = update_config(token, wid)
+        ok, message = update_config(token, wid, cuid)
         self._log(("OK " if ok else "ERR ") + message
                   + (f" [来源 {self.client_address[0]}]" if ok else ""))
         self._reply(200 if ok else 404, {"ok": ok, "message": message})

@@ -96,7 +96,7 @@ public class MainHook implements IXposedHookLoadPackage {
         }
     }
 
-    /** 扫描方法参数，找包含 X-WX-Token 的 JSON 字符串并提取 */
+    /** 扫描方法参数，找包含 X-WX-Token 的 JSON 字符串并提取 token/wid/cuid */
     private void scanArgs(Object[] args) {
         if (args == null) {
             return;
@@ -111,7 +111,7 @@ public class MainHook implements IXposedHookLoadPackage {
             }
             String token = extractToken(s);
             if (token != null) {
-                onTokenCaptured(token);
+                onTokenCaptured(token, extractWid(s), extractCuid(s));
                 return;
             }
         }
@@ -137,7 +137,32 @@ public class MainHook implements IXposedHookLoadPackage {
         return null;
     }
 
-    private void onTokenCaptured(String token) {
+    /** 从请求体 customInfo.wid 提取用户 wid，失败返回空串 */
+    private String extractWid(String s) {
+        try {
+            JSONObject json = new JSONObject(s);
+            JSONObject custom = json.optJSONObject("customInfo");
+            if (custom != null) {
+                String wid = custom.optString("wid", "");
+                if (!wid.isEmpty()) {
+                    return wid;
+                }
+            }
+        } catch (Throwable ignore) {
+        }
+        Matcher m = java.util.regex.Pattern
+                .compile("\"wid\"\\s*:\\s*\"?(\\d{6,})\"?").matcher(s);
+        return m.find() ? m.group(1) : "";
+    }
+
+    /** 从请求串 rprm_cuid=xxx 提取设备 cuid，失败返回空串 */
+    private String extractCuid(String s) {
+        Matcher m = java.util.regex.Pattern
+                .compile("rprm_cuid=([0-9a-zA-Z]+)").matcher(s);
+        return m.find() ? m.group(1) : "";
+    }
+
+    private void onTokenCaptured(String token, String wid, String cuid) {
         if (token.equals(lastToken)) {
             return; // token 未变化，不重复推送
         }
@@ -150,17 +175,24 @@ public class MainHook implements IXposedHookLoadPackage {
             XposedBridge.log(TAG + ": server url not configured, token: " + mask(token));
             return;
         }
-        XposedBridge.log(TAG + ": captured new token " + mask(token) + " -> " + serverUrl);
-        pushToken(serverUrl, token);
+        XposedBridge.log(TAG + ": captured new token " + mask(token)
+                + " wid=" + wid + " -> " + serverUrl);
+        pushToken(serverUrl, token, wid, cuid);
     }
 
-    private void pushToken(String serverUrl, String token) {
+    private void pushToken(String serverUrl, String token, String wid, String cuid) {
         // 微信主线程，必须异步发送
         Thread t = new Thread(() -> {
             HttpURLConnection conn = null;
             try {
                 JSONObject body = new JSONObject();
                 body.put("token", token);
+                if (!wid.isEmpty()) {
+                    body.put("wid", wid);
+                }
+                if (!cuid.isEmpty()) {
+                    body.put("cuid", cuid);
+                }
                 body.put("time", System.currentTimeMillis());
                 body.put("source", "xposed");
 
