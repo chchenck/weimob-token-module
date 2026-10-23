@@ -23,10 +23,32 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      # 把 Xposed API stub 源码编译成独立 jar，app 以 compileOnly files() 引用。
+      # stub 类绝不进入 APK，否则 LSPosed 拒绝加载模块。
+      - name: Build Xposed API stub jar
+        run: |
+          PLATFORM=$(ls -d "$ANDROID_HOME/platforms/android-*" | sort -V | tail -1)
+          echo "using platform: $PLATFORM"
+          mkdir -p app/libs stub_build
+          javac -classpath "$PLATFORM/android.jar" -d stub_build \
+            $(find xposed-stub/src -name '*.java')
+          jar -cf app/libs/xposed-api-stub.jar -C stub_build de
+          unzip -l app/libs/xposed-api-stub.jar
+
       - name: Build
         run: |
           gradle assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
           exit ${PIPESTATUS[0]}
+
+      # 终极防线：APK 里若检出 Xposed API 类即构建失败，杜绝 LSPosed 拒载
+      - name: Verify APK does not bundle Xposed API classes
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          if unzip -p "$APK" classes.dex | grep -q "de/robv/android/xposed"; then
+            echo "::error::APK bundles Xposed API classes! LSPosed will refuse to load it."
+            exit 1
+          fi
+          echo "APK is clean: no bundled Xposed API classes."
 
       - name: Report errors to annotations
         if: failure()

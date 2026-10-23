@@ -13,4 +13,3 @@ dependencyResolutionManagement {
 }
 rootProject.name = "WeimobTokenSniffer"
 include ':app'
-include ':xposed-stub'
