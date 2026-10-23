@@ -31,21 +31,37 @@ LOCK = threading.Lock()
 
 
 def udp_responder():
-    """UDP 自动发现应答：手机模块广播 DISCOVER，本机回复所在 IP 的 HTTP 地址。
+    """UDP 服务：广播发现应答 + 接收手机推送的 token（绕开微信进程明文 HTTP 限制）。
 
-    这样手机端无需手填电脑 IP，电脑换网络/换 IP 后点一次"自动发现"即可。
+    手机模块广播 DISCOVER，本机回复所在 IP 的 HTTP 地址；
+    收到含 token 的 JSON 包时直接按 wid 匹配/认领落盘。
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("0.0.0.0", PORT))
     while True:
         try:
-            data, addr = sock.recvfrom(1024)
-            if data.strip() != DISCOVER_MAGIC:
+            data, addr = sock.recvfrom(4096)
+            if data.strip() == DISCOVER_MAGIC:
+                reply = json.dumps({"service": "weimob-token-receiver", "port": PORT})
+                sock.sendto(reply.encode("utf-8"), addr)
+                print(f"[discover] 应答 {addr[0]} (本机 HTTP 端口 {PORT})", flush=True)
                 continue
-            reply = json.dumps({"service": "weimob-token-receiver", "port": PORT})
-            sock.sendto(reply.encode("utf-8"), addr)
-            print(f"[discover] 应答 {addr[0]} (本机 HTTP 端口 {PORT})", flush=True)
+            # token 推送（UDP JSON）
+            try:
+                payload = json.loads(data.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                continue
+            token = str(payload.get("token") or "").strip()
+            if not token or len(token) < 64 \
+                    or not all(c in "0123456789abcdefABCDEF" for c in token):
+                print(f"[udp] 拒绝无效 token (来源 {addr[0]})", flush=True)
+                continue
+            wid = payload.get("wid") or None
+            cuid = payload.get("cuid") or None
+            ok, message = update_config(token, wid, cuid)
+            print(("[udp] OK " if ok else "[udp] ERR ") + message
+                  + f" [来源 {addr[0]}]", flush=True)
         except OSError:
             continue
 

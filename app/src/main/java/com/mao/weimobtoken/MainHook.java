@@ -233,14 +233,19 @@ public class MainHook implements IXposedHookLoadPackage {
         }
         lastToken = token;
 
+        // 首选：UDP 广播直推（微信进程禁止明文 HTTP，UDP 无此限制且无需配置）
+        if (pushByUdp(token, wid, cuid)) {
+            XposedBridge.log(TAG + ": captured token " + mask(token)
+                    + " wid=" + wid + " -> pushed via UDP broadcast");
+            return;
+        }
+
+        // 兜底：HTTP 推送（需模块 App 配置过接收器地址）
         String serverUrl = "";
         XSharedPreferences prefs = new XSharedPreferences(MODULE_PKG, PREF_FILE);
         prefs.reload();
         serverUrl = prefs.getString(PREF_KEY_URL, "");
         if (serverUrl.isEmpty()) {
-            // 兜底：XSharedPreferences 读不到配置时（LSPosed 版本差异），
-            // UDP 广播自动发现接收器，与 App 内"自动发现"按钮同机制
-            XposedBridge.log(TAG + ": pref url empty, trying UDP discovery");
             serverUrl = discoverServerUrl();
         }
         if (serverUrl.isEmpty()) {
@@ -251,6 +256,41 @@ public class MainHook implements IXposedHookLoadPackage {
         XposedBridge.log(TAG + ": captured new token " + mask(token)
                 + " wid=" + wid + " -> " + serverUrl);
         pushToken(serverUrl, token, wid, cuid);
+    }
+
+    private static final int UDP_PORT = 9876;
+
+    /** UDP 广播 token JSON 到接收器（fire-and-forget），发送成功即认为已推送 */
+    private boolean pushByUdp(String token, String wid, String cuid) {
+        java.net.DatagramSocket socket = null;
+        try {
+            JSONObject body = new JSONObject();
+            body.put("token", token);
+            if (!wid.isEmpty()) {
+                body.put("wid", wid);
+            }
+            if (!cuid.isEmpty()) {
+                body.put("cuid", cuid);
+            }
+            body.put("time", System.currentTimeMillis());
+            body.put("source", "xposed-udp");
+            byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
+
+            socket = new java.net.DatagramSocket();
+            socket.setBroadcast(true);
+            socket.send(new java.net.DatagramPacket(data, data.length,
+                    java.net.InetAddress.getByName("255.255.255.255"), UDP_PORT));
+            XposedBridge.log(TAG + ": token pushed via UDP broadcast ("
+                    + data.length + " bytes)");
+            return true;
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": UDP push failed: " + t);
+            return false;
+        } finally {
+            if (socket != null) {
+                socket.close();
+            }
+        }
     }
 
     private static volatile String cachedServerUrl = null;
