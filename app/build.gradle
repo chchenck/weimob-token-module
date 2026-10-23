@@ -31,9 +31,9 @@ android {
     }
 }
 
-// Xposed API 必须 compileOnly：只参与编译、不打入 APK。
-// 若 API 类被编译进 APK，LSPosed 会拒绝加载模块（"The Xposed API classes
-// are compiled into the module's APK"），hook 完全不生效。
+// Xposed API 必须 compileOnly：stub 位于独立模块 xposed-stub，
+// 只参与编译、不打入 APK。若 API 类被编译进 APK，LSPosed 会拒绝加载模块
+//（"The Xposed API classes are compiled into the module's APK"），hook 完全不生效。
 dependencies {
-    compileOnly 'de.robv.android.xposed:api:82'
+    compileOnly project(':xposed-stub')
 }
