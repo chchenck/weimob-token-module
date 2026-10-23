@@ -1,4 +1,4 @@
-﻿package de.robv.android.xposed;
+package de.robv.android.xposed;
 
 /**
  * Xposed API stub（编译占位），运行时由 LSPosed 注入真实实现。
