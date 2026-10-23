@@ -36,10 +36,11 @@ public class MainHook implements IXposedHookLoadPackage {
     private static final String MODULE_PKG = "com.mao.weimobtoken";
     private static final String PREF_FILE = "config";
     private static final String PREF_KEY_URL = "server_url";
+    private static final String TOKEN_KEY = "X-WX-Token";
 
-    /** 匹配 "X-WX-Token":"..."（容忍空格与单引号） */
+    /** 匹配 "X-WX-Token":"..."（宽松：任意非引号字符，长度 20+） */
     private static final Pattern TOKEN_PATTERN =
-            Pattern.compile("\"X-WX-Token\"\\s*:\\s*\"([0-9a-fA-F]{32,})\"");
+            Pattern.compile("\"X-WX-Token\"\\s*:\\s*\"([^\"]{20,})\"");
 
     private static final String[] HOOK_CLASSES = {
             "com.tencent.mm.appbrand.commonjni.AppBrandCommonBindingJni",
@@ -161,17 +162,27 @@ public class MainHook implements IXposedHookLoadPackage {
                 + " native methods of " + label);
     }
 
-    /** 扫描方法参数，找包含 X-WX-Token 的 JSON 字符串并提取 token/wid/cuid */
+    /** 扫描方法参数（String 与 byte[]），找包含 X-WX-Token 的 JSON 并提取 token/wid/cuid */
     private void scanArgs(Object[] args) {
         if (args == null) {
             return;
         }
         for (Object arg : args) {
-            if (!(arg instanceof String)) {
-                continue;
+            String s = null;
+            if (arg instanceof String) {
+                s = (String) arg;
+            } else if (arg instanceof byte[]) {
+                // 新版微信可能以 byte[] 传参，限制长度防误转大块二进制
+                byte[] bytes = (byte[]) arg;
+                if (bytes.length == 0 || bytes.length > 65536) {
+                    continue;
+                }
+                s = new String(bytes, StandardCharsets.UTF_8);
+                if (s.indexOf('\u0000') >= 0) {
+                    continue; // 二进制数据，跳过
+                }
             }
-            String s = (String) arg;
-            if (!s.contains("X-WX-Token")) {
+            if (s == null || !s.contains(TOKEN_KEY)) {
                 continue;
             }
             String token = extractToken(s);
@@ -179,8 +190,16 @@ public class MainHook implements IXposedHookLoadPackage {
                 onTokenCaptured(token, extractWid(s), extractCuid(s));
                 return;
             }
+            // 含 token 字样但提取失败：打日志辅助定位格式问题（每进程只打一次）
+            if (!warnedExtractFail) {
+                warnedExtractFail = true;
+                XposedBridge.log(TAG + ": found " + TOKEN_KEY + " but extract failed, sample: "
+                        + s.substring(0, Math.min(300, s.length())));
+            }
         }
     }
+
+    private static volatile boolean warnedExtractFail = false;
 
     private String extractToken(String s) {
         // 先按 JSON 结构取，失败则正则兜底
