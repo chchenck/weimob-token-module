@@ -27,11 +27,12 @@ jobs:
       # stub 类绝不进入 APK，否则 LSPosed 拒绝加载模块。
       - name: Build Xposed API stub jar
         run: |
-          PLATFORM=$(ls -d "$ANDROID_HOME/platforms/android-*" | sort -V | tail -1)
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" >/dev/null 2>&1 || true
+          PLATFORM="$ANDROID_HOME/platforms/android-34"
           echo "using platform: $PLATFORM"
+          test -f "$PLATFORM/android.jar" || { echo "android.jar missing"; ls -R "$ANDROID_HOME/platforms" || true; exit 1; }
           mkdir -p app/libs stub_build
-          javac -classpath "$PLATFORM/android.jar" -d stub_build \
-            $(find xposed-stub/src -name '*.java')
+          javac -classpath "$PLATFORM/android.jar" -d stub_build $(find xposed-stub/src -name '*.java')
           jar -cf app/libs/xposed-api-stub.jar -C stub_build de
           unzip -l app/libs/xposed-api-stub.jar
 
