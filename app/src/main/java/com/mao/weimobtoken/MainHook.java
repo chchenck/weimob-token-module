@@ -18,7 +18,7 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
-import de.robv.android.xposed.XC_LoadPackage;
+import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 /**
  * Xposed 入口：hook 微信小程序网络请求 JNI 层，提取请求头中的 X-WX-Token，
